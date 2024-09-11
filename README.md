@@ -47,7 +47,7 @@ assert lru.get(20).isNone()
 
 The list links, keys and values are stored in a contiguous `seq` with
 links being `uint32` indices - as a consequence, capacity is capped at
-2**32 entries even on 32-bit platforms.
+2**32 entries even on 64-bit platforms.
 
 The table similarly maps hashes to indices resulting in a tight packing
 for the buckets and low memory overhead. Robin-hood open addressing is
