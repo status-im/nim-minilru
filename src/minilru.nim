@@ -350,8 +350,9 @@ func put*(s: var LruCache, key: auto, value: auto) =
 
       index =
         if bucket.isSome(): # Replacing an existing item
-          s.nodes[bucket[]].value = value
-          bucket[]
+          let index = s.buckets[bucket[]].index
+          s.nodes[index].value = value
+          index
         else:
           let
             last = s.nodes[0].prev

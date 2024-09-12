@@ -58,9 +58,7 @@ suite "minilru":
       2 notin lru
       0 notin lru
 
-    debugEcho lru
     lru.del(3)
-    debugEcho lru
     lru.del(4)
 
     check:
@@ -115,6 +113,15 @@ suite "minilru":
     lru.put(14, 14)
     check:
       3 notin lru # peek should not reorder
+
+    lru.put(4, 44)
+    check:
+      lru.peek(4) == Opt.some(44)
+
+    lru.put(15, 15)
+    check:
+      4 in lru
+      6 notin lru
 
   test "growth":
     var lru: LruCache[int, int]
