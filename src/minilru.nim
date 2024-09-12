@@ -72,7 +72,7 @@ template targetLen(i: int): int =
   # TODO investigate whether the default nim allocator works this way too..
   if i < 8:
     16
-  elif i <= 65536:
+  elif i < 32768:
     65536
   else:
     (i * 3) div 2
@@ -181,7 +181,7 @@ func tableBucket(s: LruCache, subhash: uint32, key: auto): Opt[uint32] =
     if b.index == 0 or dist > bdist:
       break
 
-    if s.nodes[b.index].key == key:
+    if b.subhash == subhash and s.nodes[b.index].key == key:
       return Opt.some(bi)
     dist += 1
 
@@ -241,6 +241,7 @@ func grow(v: var LruCache, newSize: uint32) =
 
   if oldSize > 0:
     # Adjust tail to point to end of newly allocated part
+    v.nodes[oldSize].prev = v.nodes[0].prev
     v.nodes[v.nodes[0].prev].next = oldSize
     v.nodes[0].prev = newSize - 1
 
@@ -268,6 +269,38 @@ func init*[K, V](T: type LruCache[K, V], capacity: int): T =
   ## Create a cache with the given initial capacity
 
   result.capacity = capacity
+
+iterator indices(s: LruCache): uint32 =
+  if s.nodes.len > 0:
+    var pos = s.nodes[0].next
+    for i in 0 ..< s.used:
+      yield pos
+      pos = s.nodes[pos].next
+
+iterator keys*(s: LruCache): LruCache.K =
+  # Keys, in LRU order
+  for index in s.indices:
+    yield s.nodes[index].key
+
+iterator values*(s: LruCache): LruCache.V =
+  # values, in LRU order
+  for index in s.indices:
+    yield s.nodes[index].value
+
+iterator mvalues*(s: var LruCache): var LruCache.V =
+  # values, in LRU order
+  for index in s.indices:
+    yield s.nodes[index].value
+
+iterator pairs*(s: LruCache): (LruCache.K, LruCache.V) =
+  # key-value pairs, in LRU order
+  for index in s.indices:
+    yield (s.nodes[index].key, s.nodes[index].value)
+
+iterator mpairs*(s: var LruCache): (LruCache.K, var LruCache.V) =
+  # values, in LRU order
+  for index in s.indices:
+    yield (s.nodes[index].key, s.nodes[index].value)
 
 func len*(s: LruCache): int =
   int(s.used)

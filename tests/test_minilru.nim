@@ -1,4 +1,4 @@
-import minilru, unittest2
+import std/sequtils, minilru, unittest2
 
 type
   A = object
@@ -57,6 +57,7 @@ suite "minilru":
       3 in lru
       2 notin lru
       0 notin lru
+      toSeq(lru.keys()) == @[4, 3]
 
     lru.del(3)
     lru.del(4)
@@ -123,24 +124,49 @@ suite "minilru":
       4 in lru
       6 notin lru
 
-  test "growth":
+  test "growth by 1":
     var lru: LruCache[int, int]
 
-    for i in 0 ..< 100000:
+    for i in 0 ..< 200000:
       lru.capacity = i + 1
       lru.put(i, i)
       check i in lru
 
-    for i in 0 ..< 100000:
+    # LRU order is inverse
+    block:
+      var i = 200000
+      for k in lru.keys:
+        i -= 1
+        check:
+          i == k
+
+    for i in 0 ..< 200000:
       lru.del(i)
 
-    for i in 0 ..< 100001:
+    for i in 0 ..< 200001:
       # No growth
       lru.put(i, i)
       check i in lru
 
     check:
       0 notin lru
+      1 in lru
+
+  test "direct growth":
+    var lru = LruCache[int, int].init(200000)
+
+    for i in 0 ..< 200000:
+      lru.put(i, i)
+      check i in lru
+
+    for i in 0 ..< 200001:
+      # No growth
+      lru.put(i, i)
+      check i in lru
+
+    check:
+      0 notin lru
+      1 in lru
 
   test "heterogenous lookup":
     var lru = LruCache[A, int].init(10)
