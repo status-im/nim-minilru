@@ -124,6 +124,14 @@ suite "minilru":
       4 in lru
       6 notin lru
 
+    check:
+      lru.pop(4) == Opt.some(44)
+      lru.pop(15) == Opt.some(15)
+      lru.pop(4) == Opt.none(int)
+      lru.pop(15) == Opt.none(int)
+      4 notin lru
+      15 notin lru
+
   test "growth by 1":
     var lru: LruCache[int, int]
 

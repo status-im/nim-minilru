@@ -1,5 +1,5 @@
 # minilru
-# Copyright (c) 2024 Status Research & Development GmbH
+# Copyright (c) 2024-2025 Status Research & Development GmbH
 # Licensed under either of
 #  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
 #    http://www.apache.org/licenses/LICENSE-2.0)
@@ -323,6 +323,20 @@ func del*(s: var LruCache, key: auto) =
   let index = s.tableDel(key).valueOr:
     return
 
+  resetPayload(s.nodes[index])
+
+  s.moveToBack(index)
+  s.used -= 1
+
+func pop*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
+  ## Retrieve item and remove it from LRU cache
+  if s.buckets.len() == 0 or s.used == 0:
+    return Opt.none(V)
+
+  let index = s.tableDel(key).valueOr:
+    return Opt.none(V)
+
+  result = Opt.some(s.nodes[index].value)
   resetPayload(s.nodes[index])
 
   s.moveToBack(index)
