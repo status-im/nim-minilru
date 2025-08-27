@@ -79,6 +79,7 @@ suite "minilru":
 
     check:
       not lru.update(100, 100)
+      not lru.refresh(100, 100)
 
     lru.del(5)
 
@@ -92,9 +93,11 @@ suite "minilru":
       11 in lru
 
       lru.update(1, 100)
+      lru.refresh(0, 101)
 
       1 in lru
       lru.get(1) == Opt.some(100)
+      lru.peek(0) == Opt.some(101)
 
     lru.put(12, 12)
 

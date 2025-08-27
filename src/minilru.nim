@@ -191,9 +191,12 @@ func tableBucket(s: LruCache, key: auto): Opt[uint32] =
   s.tableBucket(hash(key).toSubhash(), key)
 
 func tableGet(s: LruCache, key: auto): Opt[uint32] =
-  let bucket = ?s.tableBucket(key)
+  if s.nodes.len == 0:
+    Opt.none(uint32)
+  else:
+    let bucket = ?s.tableBucket(key)
 
-  Opt.some(s.buckets[bucket].index)
+    Opt.some(s.buckets[bucket].index)
 
 func tableDel(s: var seq[LruBucket], idx: uint32) =
   let mask = s.lenu32 - 1
@@ -344,9 +347,6 @@ func pop*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
 
 func get*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
   ## Retrieve item and move it to the front of the LRU cache
-  if s.buckets.len == 0:
-    return Opt.none(V)
-
   let index = ?s.tableGet(key)
 
   s.moveToFront(index)
@@ -355,9 +355,6 @@ func get*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
 
 func peek*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
   ## Retrieve item without moving it to the front
-  if s.buckets.len == 0:
-    return Opt.none(V)
-
   let index = ?s.tableGet(key)
 
   Opt.some(s.nodes[index].value)
@@ -365,15 +362,22 @@ func peek*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
 func update*(s: var LruCache, key: auto, value: auto): bool =
   ## Update and move an existing item to the front of the LRU cache - returns
   ## true if the item was updated, false if it was not in the cache
-  if s.nodes.len() == 0:
-    return false
-
   let index = s.tableGet(key).valueOr:
     return false
 
   s.nodes[index].value = value
 
   s.moveToFront(index)
+
+  true
+
+func refresh*(s: var LruCache, key: auto, value: auto): bool =
+  ## Update existing item without moving it to the front of the LRU cache -
+  ## returns true if the item was refreshed, false if it was not in the cache
+  let index = s.tableGet(key).valueOr:
+    return false
+
+  s.nodes[index].value = value
 
   true
 
