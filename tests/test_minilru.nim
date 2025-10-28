@@ -206,3 +206,34 @@ suite "minilru":
     lru.put(40, 40) # Evicts 20
 
     assert lru.get(20).isNone()
+
+  test "iterating over evicted items":
+    var lru = LruCache[int, int].init(2)
+
+    lru.put(10, 11)
+    lru.put(20, 22)
+
+    var found1, found2: bool
+    # Update existing value
+    for (updated, key, value) in lru.putWithEvicted(10, 15):
+      check:
+        not found1
+        updated
+        key == 10
+        value == 11
+      found1 = true
+
+    check:
+      found1
+      lru.peek(10) == Opt.some(15)
+
+    # Evict to make room for new item
+    for (updated, key, value) in lru.putWithEvicted(30, 33):
+      check:
+        not found2
+        not updated
+        key == 20
+        value == 22 # Last accessed, now that 10 was updated
+      found2 = true
+    check:
+      found2
