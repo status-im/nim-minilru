@@ -405,7 +405,7 @@ iterator putWithEvicted*(
       index =
         if bucket.isSome(): # Replacing an existing item
           let index = s.buckets[bucket[]].index
-          yield (true, s.nodes[index].key, s.nodes[index].value)
+          yield (false, s.nodes[index].key, s.nodes[index].value)
           s.nodes[index].value = value
           index
         else:
@@ -420,10 +420,10 @@ iterator putWithEvicted*(
           # `del`) but that key currently has been assigned elsewhere
           if evicted.isSome():
             let index = s.buckets[evicted[]].index
-            yield (false, s.nodes[index].key, s.nodes[index].value)
 
             if index == last:
               # Evict the tail (instead of updating it)
+              yield (true, s.nodes[index].key, s.nodes[index].value)
               s.buckets.tableDel(evicted[])
             else:
               s.used += 1
