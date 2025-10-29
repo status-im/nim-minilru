@@ -196,6 +196,7 @@ suite "minilru":
       B(v: 10) in lru
 
   test "readme example":
+    # Create cache that holds up to 2 items
     var lru = LruCache[int, int].init(2)
 
     lru.put(10, 10)
@@ -211,7 +212,9 @@ suite "minilru":
     # Allow capacity to grow to 3 items if needed
     lru.capacity = 3
 
-    lru.put(40, 40) # Evicts 20
+    # Accessed to evicted 20
+    for (evicted, key, value) in lru.putWithEvicted(40, 40):
+      assert evicted and key == 20
 
     assert lru.get(20).isNone()
 
