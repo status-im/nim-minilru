@@ -86,7 +86,12 @@ template toSubhash(h: Hash): uint32 =
   else:
     static:
       assert sizeof(h) == sizeof(uint64)
-    uint32(h) + uint32(uint64(h) shr 32)
+    let hh = h
+    uint32(hh) + uint32(uint64(hh) shr 32)
+
+template subhash(value: auto): uint32 =
+  mixin hash
+  hash(value).toSubhash()
 
 func moveToFront(s: var LruCache, i: uint32) =
   let first = s.nodes[0].next
@@ -186,9 +191,7 @@ func tableBucket(s: LruCache, subhash: uint32, key: auto): Opt[uint32] =
     dist += 1
 
 func tableBucket(s: LruCache, key: auto): Opt[uint32] =
-  mixin hash
-
-  s.tableBucket(hash(key).toSubhash(), key)
+  s.tableBucket(subhash(key), key)
 
 func tableGet(s: LruCache, key: auto): Opt[uint32] =
   if s.nodes.len == 0:
@@ -392,14 +395,12 @@ iterator putWithEvicted*(
   ## the cost of each item at which point several "cheap" items may get evicted
   ## when an expensive item is added.
 
-  mixin hash
-
   if s.used + 1 >= s.nodes.len:
     s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
 
   if s.nodes.len > 0: # if capacity was 0, there will be no growth
     let
-      subhash = hash(key).toSubhash()
+      subhash = subhash(key)
       bucket = s.tableBucket(subhash, key)
 
       index =
