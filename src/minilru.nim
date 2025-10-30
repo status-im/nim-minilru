@@ -86,7 +86,12 @@ template toSubhash(h: Hash): uint32 =
   else:
     static:
       assert sizeof(h) == sizeof(uint64)
-    uint32(h) + uint32(uint64(h) shr 32)
+    let hh = h
+    uint32(hh) + uint32(uint64(hh) shr 32)
+
+template subhash(value: auto): uint32 =
+  mixin hash
+  hash(value).toSubhash()
 
 func moveToFront(s: var LruCache, i: uint32) =
   let first = s.nodes[0].next
@@ -186,9 +191,7 @@ func tableBucket(s: LruCache, subhash: uint32, key: auto): Opt[uint32] =
     dist += 1
 
 func tableBucket(s: LruCache, key: auto): Opt[uint32] =
-  mixin hash
-
-  s.tableBucket(hash(key).toSubhash(), key)
+  s.tableBucket(subhash(key), key)
 
 func tableGet(s: LruCache, key: auto): Opt[uint32] =
   if s.nodes.len == 0:
@@ -280,12 +283,12 @@ iterator indices(s: LruCache): uint32 =
       yield pos
       pos = s.nodes[pos].next
 
-iterator keys*(s: LruCache): LruCache.K =
+iterator keys*(s: LruCache): lent LruCache.K =
   # Keys, in LRU order
   for index in s.indices:
     yield s.nodes[index].key
 
-iterator values*(s: LruCache): LruCache.V =
+iterator values*(s: LruCache): lent LruCache.V =
   # values, in LRU order
   for index in s.indices:
     yield s.nodes[index].value
@@ -295,12 +298,12 @@ iterator mvalues*(s: var LruCache): var LruCache.V =
   for index in s.indices:
     yield s.nodes[index].value
 
-iterator pairs*(s: LruCache): (LruCache.K, LruCache.V) =
+iterator pairs*(s: LruCache): (lent LruCache.K, lent LruCache.V) =
   # key-value pairs, in LRU order
   for index in s.indices:
     yield (s.nodes[index].key, s.nodes[index].value)
 
-iterator mpairs*(s: var LruCache): (LruCache.K, var LruCache.V) =
+iterator mpairs*(s: var LruCache): (lent LruCache.K, var LruCache.V) =
   # values, in LRU order
   for index in s.indices:
     yield (s.nodes[index].key, s.nodes[index].value)
@@ -381,27 +384,29 @@ func refresh*(s: var LruCache, key: auto, value: auto): bool =
 
   true
 
-func put*(s: var LruCache, key: auto, value: auto) =
-  ## Insert a new item in the cache, replacing the least recently used one.
+iterator putWithEvicted*(
+    s: var LruCache, key: auto, value: auto
+): tuple[evicted: bool, key: lent LruCache.K, value: lent LruCache.V] =
+  ## Insert a new item in the cache, replacing the least recently used one and
+  ## yielding the updated or evicted item(s), if any, with their pre-put value.
   ##
-  ## `maxCapacity` can be used to grow the cache gradually up to the given
-  ## capacity - left at 0, the cache does not shrink or grow from its initial
-  ## size - given a value, the capacity will not grow beyond it - this is
-  ## useful where allocating the full cache size on initialization would be
-  ## wasteful because it typically is not filled.
-  mixin hash
+  ## Note: Although the API supports evicting more than one item, currently this
+  ## cannot cannot happen - future versions may include options for evaluating
+  ## the cost of each item at which point several "cheap" items may get evicted
+  ## when an expensive item is added.
 
   if s.used + 1 >= s.nodes.len:
     s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
 
   if s.nodes.len > 0: # if capacity was 0, there will be no growth
     let
-      subhash = hash(key).toSubhash()
+      subhash = subhash(key)
       bucket = s.tableBucket(subhash, key)
 
       index =
         if bucket.isSome(): # Replacing an existing item
           let index = s.buckets[bucket[]].index
+          yield (false, s.nodes[index].key, s.nodes[index].value)
           s.nodes[index].value = value
           index
         else:
@@ -414,9 +419,15 @@ func put*(s: var LruCache, key: auto, value: auto) =
           # comparison avoids a false positive which happens when the last node holds
           # a default-initialized key (or a key that has not been cleared during
           # `del`) but that key currently has been assigned elsewhere
-          if evicted.isSome and s.buckets[evicted[]].index == last:
-            # Evict the tail (instead of updating it)
-            s.buckets.tableDel(evicted[])
+          if evicted.isSome():
+            let index = s.buckets[evicted[]].index
+
+            if index == last:
+              # Evict the tail (instead of updating it)
+              yield (true, s.nodes[index].key, s.nodes[index].value)
+              s.buckets.tableDel(evicted[])
+            else:
+              s.used += 1
           else:
             s.used += 1
 
@@ -427,3 +438,9 @@ func put*(s: var LruCache, key: auto, value: auto) =
           last
 
     s.moveToFront(index)
+
+func put*(s: var LruCache, key: auto, value: auto) =
+  ## Insert or update an item in the cache, replacing the least recently used
+  ## one if inserting the item would exceed capacity.
+  for _ in s.putWithEvicted(key, value):
+    discard

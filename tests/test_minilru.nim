@@ -72,7 +72,8 @@ suite "minilru":
     var lru = LruCache[int, int].init(10)
 
     for i in 0 ..< 10:
-      lru.put(i, i)
+      for (evicted, _, _) in lru.putWithEvicted(i, i):
+        check false # All are new items so we shouldn't be iterating over
 
       check:
         i in lru
@@ -86,7 +87,9 @@ suite "minilru":
     check:
       5 notin lru
 
-    lru.put(11, 11) # should take the spot of 5
+    # should take the spot of 5
+    for (evicted, _, _) in lru.putWithEvicted(11, 11):
+      check false # Also not a new spot
 
     check:
       0 in lru
@@ -99,7 +102,10 @@ suite "minilru":
       lru.get(1) == Opt.some(100)
       lru.peek(0) == Opt.some(101)
 
-    lru.put(12, 12)
+    for (evicted, key, _) in lru.putWithEvicted(12, 12):
+      check:
+        evicted
+        key == 0
 
     check:
       0 notin lru # 0 was added first, 11 took 5's place
@@ -172,7 +178,9 @@ suite "minilru":
 
     for i in 0 ..< 200001:
       # No growth
-      lru.put(i, i)
+      for (evicted, key, value) in lru.putWithEvicted(i, i):
+        check:
+          not evicted or (i == 200000 and value == 0)
       check i in lru
 
     check:
@@ -188,6 +196,7 @@ suite "minilru":
       B(v: 10) in lru
 
   test "readme example":
+    # Create cache that holds up to 2 items
     var lru = LruCache[int, int].init(2)
 
     lru.put(10, 10)
@@ -203,6 +212,39 @@ suite "minilru":
     # Allow capacity to grow to 3 items if needed
     lru.capacity = 3
 
-    lru.put(40, 40) # Evicts 20
+    # Accessed to evicted 20
+    for (evicted, key, value) in lru.putWithEvicted(40, 40):
+      assert evicted and key == 20
 
     assert lru.get(20).isNone()
+
+  test "iterating over evicted items":
+    var lru = LruCache[int, int].init(2)
+
+    lru.put(10, 11)
+    lru.put(20, 22)
+
+    var found1, found2: bool
+    # Update existing value
+    for (evicted, key, value) in lru.putWithEvicted(10, 15):
+      check:
+        not found1
+        not evicted
+        key == 10
+        value == 11
+      found1 = true
+
+    check:
+      found1
+      lru.peek(10) == Opt.some(15)
+
+    # Evict to make room for new item
+    for (evicted, key, value) in lru.putWithEvicted(30, 33):
+      check:
+        not found2
+        evicted
+        key == 20
+        value == 22 # Last accessed, now that 10 was updated
+      found2 = true
+    check:
+      found2
