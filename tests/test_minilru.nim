@@ -248,3 +248,12 @@ suite "minilru":
       found2 = true
     check:
       found2
+
+  test "MRU iteration order":
+    var lru = LruCache[int, int].init(5)
+
+    for i in 0..<6:
+      lru.put(i, i)
+
+    check:
+      toSeq(lru.keys()) == @[5, 4, 3, 2, 1]

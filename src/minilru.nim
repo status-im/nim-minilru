@@ -50,6 +50,13 @@ type
     ## The layout of the LRU node list was inspired by:
     ## * https://github.com/phuslu/lru
     ## * https://github.com/goossaert/hashmap
+    ##
+    ## Limitations:
+    ##
+    ## Because the "last used item" is not explicitly tracked, it's also not
+    ## possible to pop it without a lengthy iteration (for a non-full cache).
+
+
     nodes: seq[LruNode[K, V]]
       ## Doubly-linked list of cached entries - 0-eth entry contains head/tail -
       ## this also allows using index 0 as a special marker for "unused" in the
@@ -194,7 +201,7 @@ func tableBucket(s: LruCache, key: auto): Opt[uint32] =
   s.tableBucket(subhash(key), key)
 
 func tableGet(s: LruCache, key: auto): Opt[uint32] =
-  if s.nodes.len == 0:
+  if s.used == 0:
     Opt.none(uint32)
   else:
     let bucket = ?s.tableBucket(key)
@@ -276,7 +283,7 @@ func init*[K, V](T: type LruCache[K, V], capacity: int): T =
 
   result.capacity = capacity
 
-iterator indices(s: LruCache): uint32 =
+iterator mruIndices(s: LruCache): uint32 =
   if s.nodes.len > 0:
     var pos = s.nodes[0].next
     for i in 0 ..< s.used:
@@ -284,28 +291,37 @@ iterator indices(s: LruCache): uint32 =
       pos = s.nodes[pos].next
 
 iterator keys*(s: LruCache): lent LruCache.K =
-  # Keys, in LRU order
-  for index in s.indices:
+  ## Keys in MRU order - starting from the front with the item that was most
+  ## recently added or accessed.
+  for index in s.mruIndices:
     yield s.nodes[index].key
 
-iterator values*(s: LruCache): lent LruCache.V =
-  # values, in LRU order
-  for index in s.indices:
+iterator values*(s: LruCache, mru: static bool = false): lent LruCache.V =
+  ## Values in MRU order - starting from the front with the item that was most
+  ## recently added or accessed.
+  for index in s.mruIndices:
     yield s.nodes[index].value
 
-iterator mvalues*(s: var LruCache): var LruCache.V =
-  # values, in LRU order
-  for index in s.indices:
+iterator mvalues*(s: var LruCache, mru: static bool = false): var LruCache.V =
+  ## Values in MRU order - starting from the front with the item that was most
+  ## recently added or accessed.
+  for index in s.mruIndices:
     yield s.nodes[index].value
 
-iterator pairs*(s: LruCache): (lent LruCache.K, lent LruCache.V) =
-  # key-value pairs, in LRU order
-  for index in s.indices:
+iterator pairs*(
+    s: LruCache, mru: static bool = false
+): (lent LruCache.K, lent LruCache.V) =
+  ## Key/value pairs in MRU order - starting from the front with the item that
+  ## was most recently added or accessed.
+  for index in s.mruIndices:
     yield (s.nodes[index].key, s.nodes[index].value)
 
-iterator mpairs*(s: var LruCache): (lent LruCache.K, var LruCache.V) =
-  # values, in LRU order
-  for index in s.indices:
+iterator mpairs*(
+    s: var LruCache, mru: static bool = false
+): (lent LruCache.K, var LruCache.V) =
+  ## Key/value pairs in MRU order - starting from the front with the item that
+  ## was most recently added or accessed.
+  for index in s.mruIndices:
     yield (s.nodes[index].key, s.nodes[index].value)
 
 func len*(s: LruCache): int =
@@ -315,15 +331,17 @@ func capacity*(s: LruCache): int =
   s.capacity
 
 func `capacity=`*(s: var LruCache, c: int) =
+  ## Update the capacity (but don't reallocate the currenty cache). If the
+  ## capacity is smaller than the currently allocated size, it will be ignored.
   s.capacity = c
 
 func contains*(s: LruCache, key: auto): bool =
   ## Return true iff key can be found in cache - does not update item position
-  s.buckets.len() > 0 and s.tableBucket(key).isSome()
+  s.used > 0 and s.tableBucket(key).isSome()
 
 func del*(s: var LruCache, key: auto) =
   ## Remove item from cache, if present - does nothing if it was missing
-  if s.buckets.len() == 0 or s.used == 0:
+  if s.used == 0:
     return
 
   let index = s.tableDel(key).valueOr:
@@ -336,13 +354,13 @@ func del*(s: var LruCache, key: auto) =
 
 func pop*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
   ## Retrieve item and remove it from LRU cache
-  if s.buckets.len() == 0 or s.used == 0:
+  if s.used == 0:
     return Opt.none(V)
 
   let index = s.tableDel(key).valueOr:
     return Opt.none(V)
 
-  result = Opt.some(s.nodes[index].value)
+  result = Opt.some(move(s.nodes[index].value))
   resetPayload(s.nodes[index])
 
   s.moveToBack(index)
@@ -356,7 +374,7 @@ func get*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
 
   Opt.some(s.nodes[index].value)
 
-func peek*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
+func peek*[K, V](s: LruCache[K, V], key: auto): Opt[V] =
   ## Retrieve item without moving it to the front
   let index = ?s.tableGet(key)
 
