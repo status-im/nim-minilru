@@ -55,8 +55,6 @@ type
     ##
     ## Because the "last used item" is not explicitly tracked, it's also not
     ## possible to pop it without a lengthy iteration (for a non-full cache).
-
-
     nodes: seq[LruNode[K, V]]
       ## Doubly-linked list of cached entries - 0-eth entry contains head/tail -
       ## this also allows using index 0 as a special marker for "unused" in the

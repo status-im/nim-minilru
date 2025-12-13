@@ -252,7 +252,7 @@ suite "minilru":
   test "MRU iteration order":
     var lru = LruCache[int, int].init(5)
 
-    for i in 0..<6:
+    for i in 0 ..< 6:
       lru.put(i, i)
 
     check:
