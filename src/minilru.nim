@@ -147,7 +147,9 @@ iterator pairsAt(s: openArray[LruBucket], bucket: uint32): (uint32, LruBucket) =
     yield (i, s[i])
     i = (i + 1) and mask
 
-iterator mpairsAt(s: var openArray[LruBucket], bucket: uint32): (uint32, var LruBucket) =
+iterator mpairsAt(
+    s: var openArray[LruBucket], bucket: uint32
+): (uint32, var LruBucket) =
   let mask = s.lenu32 - 1 # len must be power of two
   var i = bucket and mask
 
@@ -248,7 +250,8 @@ proc grow[K, V](v: var LruCache[K, V], newSize: uint32) =
 
   if newSize.int > v.nodesAllocatedLen:
     let nextPower = nextPowerOfTwo(newSize.int)
-    v.nodes = cast[ptr UncheckedArray[LruNode[K, V]]](resizeShared(v.nodes[0].addr, nextPower))
+    v.nodes =
+      cast[ptr UncheckedArray[LruNode[K, V]]](resizeShared(v.nodes[0].addr, nextPower))
     v.nodesLen = newSize.int
     v.nodesAllocatedLen = nextPower
   else:
@@ -273,7 +276,7 @@ proc grow[K, V](v: var LruCache[K, V], newSize: uint32) =
   let buckets = v.buckets
   v.buckets = cast[ptr UncheckedArray[LruBucket]](createShared(LruBucket, newTableSize))
 
-  for i in 0..<v.bucketsLen:
+  for i in 0 ..< v.bucketsLen:
     let b = buckets[i]
     if b.index != 0:
       toOpenArray(v.buckets, 0, newTableSize - 1).tablePut(b.subhash, b.index)
