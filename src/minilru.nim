@@ -55,11 +55,15 @@ type
     ##
     ## Because the "last used item" is not explicitly tracked, it's also not
     ## possible to pop it without a lengthy iteration (for a non-full cache).
-    nodes: seq[LruNode[K, V]]
+    nodes: ptr UncheckedArray[LruNode[K, V]]
+    nodesAllocatedLen: int
+    nodesLen: int
       ## Doubly-linked list of cached entries - 0-eth entry contains head/tail -
       ## this also allows using index 0 as a special marker for "unused" in the
       ## hash table
-    buckets: seq[LruBucket]
+
+    buckets: ptr UncheckedArray[LruBucket]
+    bucketsLen: int
       # Bucket list for robin-hood-style hash table with a capacity slightly
       # larger than the data list
 
@@ -132,10 +136,10 @@ func moveToBack(s: var LruCache, i: uint32) =
   s.nodes[last].next = i
   s.nodes[0].prev = i
 
-template lenu32(s: seq): uint32 =
+template lenu32(s: openArray[LruBucket]): uint32 =
   uint32(s.len)
 
-iterator pairsAt(s: seq[LruBucket], bucket: uint32): (uint32, LruBucket) =
+iterator pairsAt(s: openArray[LruBucket], bucket: uint32): (uint32, LruBucket) =
   let mask = s.lenu32 - 1 # len must be power of two
   var i = bucket and mask
 
@@ -143,7 +147,7 @@ iterator pairsAt(s: seq[LruBucket], bucket: uint32): (uint32, LruBucket) =
     yield (i, s[i])
     i = (i + 1) and mask
 
-iterator mpairsAt(s: var seq[LruBucket], bucket: uint32): (uint32, var LruBucket) =
+iterator mpairsAt(s: var openArray[LruBucket], bucket: uint32): (uint32, var LruBucket) =
   let mask = s.lenu32 - 1 # len must be power of two
   var i = bucket and mask
 
@@ -158,7 +162,7 @@ template psl(buckets, bucket, subhash: uint32): uint32 =
   # result is well defined
   (bucket - subhash) and mask
 
-func tablePut(s: var seq[LruBucket], subhash, index: uint32) =
+func tablePut(s: var openArray[LruBucket], subhash, index: uint32) =
   var
     subhash = subhash
     index = index
@@ -186,8 +190,8 @@ func tableBucket(s: LruCache, subhash: uint32, key: auto): Opt[uint32] =
   mixin `==`
 
   var dist: uint32
-  for bi, b in s.buckets.pairsAt(subhash):
-    let bdist = psl(s.buckets.lenu32, bi, b.subhash)
+  for bi, b in toOpenArray(s.buckets, 0, s.bucketsLen - 1).pairsAt(subhash):
+    let bdist = psl(s.bucketsLen.uint32, bi, b.subhash)
     if b.index == 0 or dist > bdist:
       break
 
@@ -206,7 +210,7 @@ func tableGet(s: LruCache, key: auto): Opt[uint32] =
 
     Opt.some(s.buckets[bucket].index)
 
-func tableDel(s: var seq[LruBucket], idx: uint32) =
+func tableDel(s: var openArray[LruBucket], idx: uint32) =
   let mask = s.lenu32 - 1
   # Shift other items backward to fill the spot
   for bi, b in s.mpairsAt(idx):
@@ -233,16 +237,22 @@ func tableDel(s: var LruCache, key: auto): Opt[uint32] =
     bucket = ?s.tableBucket(key)
     idx = s.buckets[bucket].index
 
-  s.buckets.tableDel(bucket)
+  toOpenArray(s.buckets, 0, s.bucketsLen - 1).tableDel(bucket)
   ok(idx)
 
-func grow(v: var LruCache, newSize: uint32) =
-  let oldSize = v.nodes.lenu32()
+proc grow[K, V](v: var LruCache[K, V], newSize: uint32) =
+  let oldSize = v.nodesLen.uint32
 
   if oldSize >= newSize or newSize <= 1:
     return
 
-  v.nodes.setLen(int(newSize))
+  if newSize.int > v.nodesAllocatedLen:
+    let nextPower = nextPowerOfTwo(newSize.int)
+    v.nodes = cast[ptr UncheckedArray[LruNode[K, V]]](resizeShared(v.nodes[0].addr, nextPower))
+    v.nodesLen = newSize.int
+    v.nodesAllocatedLen = nextPower
+  else:
+    v.nodesLen = newSize.int
 
   # Create fully linked list of items - this keeps the move logic free of
   # special cases for uninitialized nodes
@@ -257,15 +267,18 @@ func grow(v: var LruCache, newSize: uint32) =
     v.nodes[0].prev = newSize - 1
 
   let newTableSize = nextPowerOfTwo(int(ceil(newSize.float / fillRatio)))
-  if v.buckets.len >= newTableSize: # nextPowerOfTwo rounds up effectively..
+  if v.bucketsLen >= newTableSize: # nextPowerOfTwo rounds up effectively..
     return
 
-  var buckets = newSeq[LruBucket](newTableSize)
-  swap(v.buckets, buckets)
+  let buckets = v.buckets
+  v.buckets = cast[ptr UncheckedArray[LruBucket]](createShared(LruBucket, newTableSize))
 
-  for b in buckets:
+  for i in 0..<v.bucketsLen:
+    let b = buckets[i]
     if b.index != 0:
-      v.buckets.tablePut(b.subhash, b.index)
+      toOpenArray(v.buckets, 0, newTableSize - 1).tablePut(b.subhash, b.index)
+
+  v.bucketsLen = newTableSize
 
 func resetPayload(n: var LruNode) =
   # Resetting the payload is not needed for the cache itself (it will happily
@@ -278,11 +291,10 @@ func resetPayload(n: var LruNode) =
 
 func init*[K, V](T: type LruCache[K, V], capacity: int): T =
   ## Create a cache with the given initial capacity
-
   result.capacity = capacity
 
 iterator mruIndices(s: LruCache): uint32 =
-  if s.nodes.len > 0:
+  if s.nodesLen > 0:
     var pos = s.nodes[0].next
     for i in 0 ..< s.used:
       yield pos
@@ -400,9 +412,9 @@ func refresh*(s: var LruCache, key: auto, value: auto): bool =
 
   true
 
-iterator putWithEvicted*(
-    s: var LruCache, key: auto, value: auto
-): tuple[evicted: bool, key: lent LruCache.K, value: lent LruCache.V] =
+iterator putWithEvicted*[K, V](
+    s: var LruCache, key: K, value: V
+): tuple[evicted: bool, key: LruCache.K, value: LruCache.V] =
   ## Insert a new item in the cache, replacing the least recently used one and
   ## yielding the updated or evicted item(s), if any, with their pre-put value.
   ##
@@ -411,10 +423,10 @@ iterator putWithEvicted*(
   ## the cost of each item at which point several "cheap" items may get evicted
   ## when an expensive item is added.
 
-  if s.used + 1 >= s.nodes.len:
+  if s.used + 1 >= s.nodesLen:
     s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
 
-  if s.nodes.len > 0: # if capacity was 0, there will be no growth
+  if s.nodesLen > 0: # if capacity was 0, there will be no growth
     let
       subhash = subhash(key)
       bucket = s.tableBucket(subhash, key)
@@ -441,7 +453,7 @@ iterator putWithEvicted*(
             if index == last:
               # Evict the tail (instead of updating it)
               yield (true, s.nodes[index].key, s.nodes[index].value)
-              s.buckets.tableDel(evicted[])
+              toOpenArray(s.buckets, 0, s.bucketsLen - 1).tableDel(evicted[])
             else:
               s.used += 1
           else:
@@ -450,7 +462,7 @@ iterator putWithEvicted*(
           node[].key = key
           node[].value = value
 
-          s.buckets.tablePut(subhash, last)
+          toOpenArray(s.buckets, 0, s.bucketsLen - 1).tablePut(subhash, last)
           last
 
     s.moveToFront(index)
@@ -458,5 +470,6 @@ iterator putWithEvicted*(
 func put*(s: var LruCache, key: auto, value: auto) =
   ## Insert or update an item in the cache, replacing the least recently used
   ## one if inserting the item would exceed capacity.
-  for _ in s.putWithEvicted(key, value):
-    discard
+  {.cast(noSideEffect).}:
+    for _ in s.putWithEvicted(key, value):
+      discard
