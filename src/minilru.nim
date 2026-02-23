@@ -279,6 +279,7 @@ func resetPayload(n: var LruNode) =
 func init*[K, V](T: type LruCache[K, V], capacity: int): T =
   ## Create a cache with the given initial capacity
 
+  result.grow(uint32(capacity))
   result.capacity = capacity
 
 iterator mruIndices(s: LruCache): uint32 =
@@ -331,6 +332,7 @@ func capacity*(s: LruCache): int =
 func `capacity=`*(s: var LruCache, c: int) =
   ## Update the capacity (but don't reallocate the currenty cache). If the
   ## capacity is smaller than the currently allocated size, it will be ignored.
+  s.grow(uint32(c))
   s.capacity = c
 
 func contains*(s: LruCache, key: auto): bool =
