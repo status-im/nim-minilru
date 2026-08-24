@@ -1,6 +1,6 @@
 # Package
 
-version = "0.1.0"
+version = "0.1.1"
 author = "Jacek Sieka"
 description = "Status Research & Development GmbH"
 license = "MIT"
@@ -8,7 +8,7 @@ srcDir = "src"
 
 # Dependencies
 
-requires "nim >= 1.6.0", "results", "unittest2"
+requires "nim >= 1.6.18", "results >= 0.5.0", "unittest2 >= 0.2.0"
 
 let nimc = getEnv("NIMC", "nim") # Which nim compiler to use
 let lang = getEnv("NIMLANG", "c") # Which backend (c/cpp/js)
