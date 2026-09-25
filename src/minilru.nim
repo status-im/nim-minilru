@@ -290,7 +290,7 @@ iterator mruIndices(s: LruCache): uint32 =
     for i in 0 ..< used:
       yield pos
       doAssert s.used == used and s.nodes.len == nodesLen,
-        "the LRU cache changed while iterating over it"
+        "the LRU cache changed while iterating over it: " & $typeof(s)
       pos = s.nodes[pos].next
 
 iterator keys*(s: LruCache): lent LruCache.K =
