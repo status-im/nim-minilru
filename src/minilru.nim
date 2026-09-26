@@ -1,5 +1,5 @@
 # minilru
-# Copyright (c) 2024-2025 Status Research & Development GmbH
+# Copyright (c) 2024-2026 Status Research & Development GmbH
 # Licensed under either of
 #  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
 #    http://www.apache.org/licenses/LICENSE-2.0)
@@ -8,7 +8,7 @@
 # at your option. This file may not be copied, modified, or distributed
 # except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 
 import std/[hashes, math, typetraits], results
 
@@ -283,9 +283,14 @@ func init*[K, V](T: type LruCache[K, V], capacity: int): T =
 
 iterator mruIndices(s: LruCache): uint32 =
   if s.nodes.len > 0:
+    let
+      used = s.used
+      nodesLen = s.nodes.len
     var pos = s.nodes[0].next
-    for i in 0 ..< s.used:
+    for i in 0 ..< used:
       yield pos
+      doAssert s.used == used and s.nodes.len == nodesLen,
+        "the LRU cache changed while iterating over it: " & $typeof(s)
       pos = s.nodes[pos].next
 
 iterator keys*(s: LruCache): lent LruCache.K =
