@@ -1,31 +1,25 @@
 mode = ScriptMode.Verbose
 
-packageName   = "minilru"
-version       = "0.1.1"
-author        = "Jacek Sieka"
-description   = "Status Research & Development GmbH"
-license       = "MIT"
-srcDir        = "src"
+packageName = "minilru"
+version = "0.1.1"
+author = "Jacek Sieka"
+description = "Status Research & Development GmbH"
+license = "MIT"
+srcDir = "src"
 
-requires "nim >= 1.6.18",
-         "results >= 0.5.0",
-         "unittest2 >= 0.2.0"
+requires "nim >= 1.6.18", "results >= 0.5.0", "unittest2 >= 0.2.0"
 
 let nimc = getEnv("NIMC", "nim") # Which nim compiler to use
 let lang = getEnv("NIMLANG", "c") # Which backend (c/cpp/js)
 let flags = getEnv("NIMFLAGS", "") # Extra flags for the compiler
 let verbose = getEnv("V", "") notin ["", "0"]
 let platform = getEnv("PLATFORM", "")
-let testArguments = [
-  "-d:debug",
-  "-d:release",
-]
+let testArguments = ["-d:debug", "-d:release"]
 
 from std/os import quoteShell
 
 let cfg =
-  " --styleCheck:usages --styleCheck:error" &
-  (if verbose: "" else: " --verbosity:0") &
+  " --styleCheck:usages --styleCheck:error" & (if verbose: "" else: " --verbosity:0") &
   " --skipParentCfg --skipUserCfg --outdir:build -f " &
   quoteShell("--nimcache:build/nimcache/$projectName")
 
@@ -54,10 +48,8 @@ task test_asan, "Run all tests with ASAN":
     putEnv("UBSAN_OPTIONS", "print_stacktrace=1")
     let asanArgs =
       " --mm:orc -d:useMalloc --cc:clang --debugger:native" &
-      " --passC:-fsanitize=address,undefined" &
-      " --passL:-fsanitize=address,undefined" &
-      " --passC:-fno-sanitize-recover=undefined" &
-      " --passC:-fno-sanitize-merge" &
+      " --passC:-fsanitize=address,undefined" & " --passL:-fsanitize=address,undefined" &
+      " --passC:-fno-sanitize-recover=undefined" & " --passC:-fno-sanitize-merge" &
       " --passC:-fno-omit-frame-pointer"
     for args in testArguments:
       run args & asanArgs, "tests/test_minilru"
