@@ -9,6 +9,10 @@ on:
 jobs:
   build:
     uses: status-im/nimbus-common-workflow/.github/workflows/common.yml@main
+    with:
+      test-command: |
+        nimble test_asan
+        nimble test
 
   nph:
     runs-on: ubuntu-latest
