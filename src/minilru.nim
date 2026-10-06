@@ -342,53 +342,6 @@ func contains*(s: LruCache, key: auto): bool =
   ## Return true iff key can be found in cache - does not update item position
   s.used > 0 and s.tableBucket(key).isSome()
 
-func mgetOrPut*[K, V](s: var LruCache[K, V], key: auto): var V =
-  ## Retrieve item or put the default initialization value for type `V`
-  ## (e.g. 0 for any integer type), replacing the least recently used one if
-  ## inserting the item would exceed capacity.
-  if s.used + 1 >= s.nodes.len:
-    s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
-
-  doAssert s.nodes.len > 0, "the LRU cache has zero capacity: " & $typeof(s)
-
-  let
-    subhash = subhash(key)
-    bucket = s.tableBucket(subhash, key)
-
-    index =
-      if bucket.isSome():
-        s.buckets[bucket[]].index
-      else:
-        let
-          last = s.nodes[0].prev
-          node = addr s.nodes[last]
-          evicted = s.tableBucket(node[].key)
-
-        # Evict the least recently used item from the lookup table - the bucket
-        # comparison avoids a false positive which happens when the last node holds
-        # a default-initialized key (or a key that has not been cleared during
-        # `del`) but that key currently has been assigned elsewhere
-        if evicted.isSome():
-          let index = s.buckets[evicted[]].index
-
-          if index == last:
-            # Evict the tail (instead of updating it)
-            s.buckets.tableDel(evicted[])
-          else:
-            s.used += 1
-        else:
-          s.used += 1
-
-        node[].key = key
-        reset(node[].value)
-
-        s.buckets.tablePut(subhash, last)
-        last
-
-  s.moveToFront(index)
-
-  s.nodes[index].value
-
 func del*(s: var LruCache, key: auto) =
   ## Remove item from cache, if present - does nothing if it was missing
   if s.used == 0:
@@ -416,6 +369,14 @@ func pop*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
   s.moveToBack(index)
   s.used -= 1
 
+func get*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
+  ## Retrieve item and move it to the front of the LRU cache
+  let index = ?s.tableGet(key)
+
+  s.moveToFront(index)
+
+  Opt.some(s.nodes[index].value)
+
 func getAddr[K, V](s: var LruCache[K, V], key: auto): ptr V =
   let index = s.tableGet(key).valueOr:
     return nil
@@ -431,14 +392,6 @@ template withValue*[K, V](s: var LruCache[K, V], key: auto, value, body: untyped
   if address != nil:
     var value {.inject.} = address
     body
-
-func get*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
-  ## Retrieve item and move it to the front of the LRU cache
-  let index = ?s.tableGet(key)
-
-  s.moveToFront(index)
-
-  Opt.some(s.nodes[index].value)
 
 func peek*[K, V](s: LruCache[K, V], key: auto): Opt[V] =
   ## Retrieve item without moving it to the front
@@ -482,7 +435,7 @@ iterator putWithEvicted*(
   if s.used + 1 >= s.nodes.len:
     s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
 
-  if s.nodes.len > 0: # if capacity was 0, there will be no growth
+  if s.nodes.len > 1: # if capacity was 0, there will be no growth
     let
       subhash = subhash(key)
       bucket = s.tableBucket(subhash, key)
@@ -522,6 +475,58 @@ iterator putWithEvicted*(
           last
 
     s.moveToFront(index)
+
+func mgetOrPut*[K, V](s: var LruCache[K, V], key: auto): var V =
+  ## Retrieve item or put the default initialization value for type `V`
+  ## (e.g. 0 for any integer type), replacing the least recently used one if
+  ## inserting the item would exceed capacity.
+
+  if s.used + 1 >= s.nodes.len:
+    s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
+
+  if s.nodes.len > 1: # if capacity was 0, there will be no growth
+    let
+      subhash = subhash(key)
+      bucket = s.tableBucket(subhash, key)
+
+      index =
+        if bucket.isSome(): # Retrieving an existing item
+          s.buckets[bucket[]].index
+        else:
+          let
+            last = s.nodes[0].prev
+            node = addr s.nodes[last]
+            evicted = s.tableBucket(node[].key)
+
+          # Evict the least recently used item from the lookup table - the bucket
+          # comparison avoids a false positive which happens when the last node holds
+          # a default-initialized key (or a key that has not been cleared during
+          # `del`) but that key currently has been assigned elsewhere
+          if evicted.isSome():
+            let index = s.buckets[evicted[]].index
+
+            if index == last:
+              # Evict the tail (instead of updating it)
+              s.buckets.tableDel(evicted[])
+            else:
+              s.used += 1
+          else:
+            s.used += 1
+
+          node[].key = key
+          reset(node[].value)
+
+          s.buckets.tablePut(subhash, last)
+          last
+
+    s.moveToFront(index)
+
+    return s.nodes[index].value
+  else:
+    s.nodes.setLen(1)
+    reset(s.nodes[0].value)
+
+    return s.nodes[0].value
 
 func put*(s: var LruCache, key: auto, value: auto) =
   ## Insert or update an item in the cache, replacing the least recently used

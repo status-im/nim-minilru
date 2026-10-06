@@ -22,6 +22,11 @@ suite "minilru":
     check:
       0 notin lru
 
+    lru.mgetOrPut(1) = 1
+    check:
+      1 notin lru
+      lru.mgetOrPut(2) == 0
+
     lru.put(1, 1)
     check:
       1 notin lru
