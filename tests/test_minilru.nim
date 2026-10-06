@@ -211,12 +211,21 @@ suite "minilru":
 
     # Allow capacity to grow to 3 items if needed
     lru.capacity = 3
+    lru.put(40, 40)
 
-    # Accessed to evicted 20
-    for (evicted, key, value) in lru.putWithEvicted(40, 40):
-      assert evicted and key == 20
+    # Access the item evicted to make room for 50
+    for (evicted, key, value) in lru.putWithEvicted(50, 50):
+      assert evicted and key == 10
 
-    assert lru.get(20).isNone()
+    assert lru.get(10).isNone()
+
+    # Access and update items in place, without copying them
+    lru.withValue(30, value):
+      value[] += 1
+
+    lru.mgetOrPut(60) = 60
+
+    assert lru.peek(30) == Opt.some(31)
 
   test "iterating over evicted items":
     var lru = LruCache[int, int].init(2)
@@ -257,3 +266,16 @@ suite "minilru":
 
     check:
       toSeq(lru.keys()) == @[5, 4, 3, 2, 1]
+
+    lru.withValue(1, value):
+      value[] = 11
+
+    lru.withValue(0, value):
+      check false # 0 was evicted
+
+    lru.mgetOrPut(3) += 30
+    lru.mgetOrPut(6) += 6 # Replaces 2, starting from the default
+
+    check:
+      toSeq(lru.keys()) == @[6, 3, 1, 5, 4]
+      toSeq(lru.values()) == @[6, 33, 11, 5, 4]

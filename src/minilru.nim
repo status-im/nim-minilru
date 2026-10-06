@@ -56,7 +56,7 @@ type
     ## Because the "last used item" is not explicitly tracked, it's also not
     ## possible to pop it without a lengthy iteration (for a non-full cache).
     nodes: seq[LruNode[K, V]]
-      ## Doubly-linked list of cached entries - 0-eth entry contains head/tail -
+      ## Doubly-linked list of cached entries - 0th entry contains head/tail -
       ## this also allows using index 0 as a special marker for "unused" in the
       ## hash table
     buckets: seq[LruBucket]
@@ -334,13 +334,60 @@ func capacity*(s: LruCache): int =
   s.capacity
 
 func `capacity=`*(s: var LruCache, c: int) =
-  ## Update the capacity (but don't reallocate the currenty cache). If the
+  ## Update the capacity (but don't reallocate the current cache). If the
   ## capacity is smaller than the currently allocated size, it will be ignored.
   s.capacity = c
 
 func contains*(s: LruCache, key: auto): bool =
   ## Return true iff key can be found in cache - does not update item position
   s.used > 0 and s.tableBucket(key).isSome()
+
+func mgetOrPut*[K, V](s: var LruCache[K, V], key: auto): var V =
+  ## Retrieve item or put the default initialization value for type `V`
+  ## (e.g. 0 for any integer type), replacing the least recently used one if
+  ## inserting the item would exceed capacity.
+  if s.used + 1 >= s.nodes.len:
+    s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
+
+  doAssert s.nodes.len > 0, "the LRU cache has zero capacity: " & $typeof(s)
+
+  let
+    subhash = subhash(key)
+    bucket = s.tableBucket(subhash, key)
+
+    index =
+      if bucket.isSome():
+        s.buckets[bucket[]].index
+      else:
+        let
+          last = s.nodes[0].prev
+          node = addr s.nodes[last]
+          evicted = s.tableBucket(node[].key)
+
+        # Evict the least recently used item from the lookup table - the bucket
+        # comparison avoids a false positive which happens when the last node holds
+        # a default-initialized key (or a key that has not been cleared during
+        # `del`) but that key currently has been assigned elsewhere
+        if evicted.isSome():
+          let index = s.buckets[evicted[]].index
+
+          if index == last:
+            # Evict the tail (instead of updating it)
+            s.buckets.tableDel(evicted[])
+          else:
+            s.used += 1
+        else:
+          s.used += 1
+
+        node[].key = key
+        reset(node[].value)
+
+        s.buckets.tablePut(subhash, last)
+        last
+
+  s.moveToFront(index)
+
+  s.nodes[index].value
 
 func del*(s: var LruCache, key: auto) =
   ## Remove item from cache, if present - does nothing if it was missing
@@ -368,6 +415,22 @@ func pop*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
 
   s.moveToBack(index)
   s.used -= 1
+
+func getAddr[K, V](s: var LruCache[K, V], key: auto): ptr V =
+  let index = s.tableGet(key).valueOr:
+    return nil
+
+  s.moveToFront(index)
+
+  addr s.nodes[index].value
+
+template withValue*[K, V](s: var LruCache[K, V], key: auto, value, body: untyped) =
+  ## Retrieve item and move it to the front of the LRU cache - if present,
+  ## `value` can be modified in the scope of the `withValue` call.
+  let address = s.getAddr(key)
+  if address != nil:
+    var value {.inject.} = address
+    body
 
 func get*[K, V](s: var LruCache[K, V], key: auto): Opt[V] =
   ## Retrieve item and move it to the front of the LRU cache
@@ -412,9 +475,9 @@ iterator putWithEvicted*(
   ## yielding the updated or evicted item(s), if any, with their pre-put value.
   ##
   ## Note: Although the API supports evicting more than one item, currently this
-  ## cannot cannot happen - future versions may include options for evaluating
-  ## the cost of each item at which point several "cheap" items may get evicted
-  ## when an expensive item is added.
+  ## cannot happen - future versions may include options for evaluating the cost
+  ## of each item at which point several "cheap" items may get evicted when an
+  ## expensive item is added.
 
   if s.used + 1 >= s.nodes.len:
     s.grow(uint32(min(s.capacity, targetLen(s.used)) + 1))
