@@ -237,7 +237,16 @@ func tableDel(s: var LruCache, key: auto): Opt[uint32] =
   ok(idx)
 
 func grow(v: var LruCache, newSize: uint32) =
-  let oldSize = v.nodes.lenu32()
+  let
+    oldSize = v.nodes.lenu32()
+    capacity = min(int64(v.capacity), int64(high(uint32)) - 1)
+    newSize =
+      if capacity + 1 < 2 * int64(newSize):
+        # Growing a `seq` may reserve up to twice its previous allocation,
+        # i.e. after `newSize` the next time it may grow to `2 * newSize`
+        uint32(capacity + 1)
+      else:
+        newSize
 
   if oldSize >= newSize or newSize <= 1:
     return

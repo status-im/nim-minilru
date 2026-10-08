@@ -1,4 +1,4 @@
-import std/sequtils, minilru, unittest2
+import std/[importutils, sequtils], minilru, unittest2
 
 type
   A = object
@@ -175,6 +175,11 @@ suite "minilru":
     for i in 0 ..< 200000:
       lru.put(i, i)
       check i in lru
+
+    # No reservation beyond the capacity
+    privateAccess(LruCache)
+    check:
+      lru.nodes.capacity == 200001
 
     for i in 0 ..< 200001:
       # No growth
