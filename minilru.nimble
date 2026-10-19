@@ -1,7 +1,7 @@
 mode = ScriptMode.Verbose
 
 packageName = "minilru"
-version = "0.2.1"
+version = "0.2.2"
 author = "Jacek Sieka"
 description = "Status Research & Development GmbH"
 license = "MIT"
