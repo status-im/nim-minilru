@@ -29,21 +29,12 @@ assert lru.get(20).isNone()
 
 # Allow capacity to grow to 3 items if needed
 lru.capacity = 3
-lru.put(40, 40)
 
-# Access the item evicted to make room for 50
-for (evicted, key, value) in lru.putWithEvicted(50, 50):
-  assert evicted and key == 10
+# Accessed to evicted 20
+for (evicted, key, value) in lru.putWithEvicted(40, 40):
+  assert evicted and key == 20
 
-assert lru.get(10).isNone()
-
-# Access and update items in place, without copying them
-lru.withValue(30, value):
-  value[] += 1
-
-lru.mgetOrPut(60) = 60
-
-assert lru.peek(30) == Opt.some(31)
+assert lru.get(20).isNone()
 ```
 
 ## Features
